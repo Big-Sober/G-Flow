@@ -1,0 +1,666 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-PDS1TXDLZY"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      gtag('config', 'G-PDS1TXDLZY');
+    </script>
+    
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes, viewport-fit=cover">
+    <title>3DP.ING // HYPER-LAPSE G-CODE TERMINAL</title>
+    
+    <meta name="description" content="Real-time cyberpunk 3D printing G-code visualizer.">
+    <meta property="og:image" content="./preview.jpg">
+    <link rel="icon" href="./favicon.ico" type="image/x-icon">
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #050505;
+            font-family: 'Consolas', 'Monaco', monospace;
+            color: #00ff41;
+            height: 100vh;
+            width: 100vw;
+            position: fixed;
+            touch-action: none;
+        }
+
+        canvas {
+            display: block;
+            filter: contrast(1.2) brightness(1.1);
+            cursor: grab;
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 1;
+        }
+        canvas:active { cursor: grabbing; }
+
+        .hud-container {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none; 
+            padding: 30px;
+            box-sizing: border-box;
+            z-index: 10;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+
+        .brand-link {
+            position: absolute;
+            top: 30px; right: 30px;
+            pointer-events: auto;
+            text-decoration: none;
+            color: #00ff41;
+            font-size: 12px;
+            font-weight: bold;
+            letter-spacing: 1px;
+            opacity: 0.5;
+            transition: all 0.3s ease;
+            padding: 5px 10px;
+            border: 1px solid transparent;
+        }
+        .brand-link:hover { opacity: 1; background: rgba(0, 255, 65, 0.1); border: 1px solid #00ff41; text-shadow: 0 0 5px #00ff41; }
+
+        .stats-panel {
+            background: rgba(0, 20, 0, 0.85);
+            border-left: 2px solid #00ff41;
+            padding: 25px;
+            backdrop-filter: blur(10px);
+            width: 280px;
+            pointer-events: auto;
+            box-shadow: 0 0 40px rgba(0, 0, 0, 0.8);
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .controls-row {
+            display: flex;
+            gap: 4px;
+            margin-bottom: 5px;
+        }
+        .btn-toggle {
+            flex: 1;
+            background: rgba(0, 255, 65, 0.1);
+            border: 1px solid rgba(0, 255, 65, 0.3);
+            color: #00ff41;
+            font-size: 8px;
+            padding: 6px 0;
+            cursor: pointer;
+            text-transform: uppercase;
+            font-weight: bold;
+            letter-spacing: 0.5px;
+            transition: all 0.2s;
+        }
+        .btn-toggle.active { background: #00ff41; color: #000; box-shadow: 0 0 10px rgba(0, 255, 65, 0.5); }
+
+        .live-counter-wrapper {
+            border: 1px solid rgba(0, 255, 65, 0.3);
+            background: #000;
+            padding: 15px 10px;
+            text-align: center;
+            margin-bottom: 10px;
+        }
+        .counter-val { font-family: 'Courier New', monospace; font-size: 28px; font-weight: 900; color: #fff; letter-spacing: 1px; text-shadow: 0 0 10px rgba(0, 255, 65, 0.8); }
+
+        .stat-row { display: flex; justify-content: space-between; font-size: 13px; border-bottom: 1px solid rgba(0, 255, 65, 0.15); padding-bottom: 4px; }
+        .stat-label { opacity: 0.7; font-size: 11px; }
+        .stat-value { font-weight: bold; font-family: 'Courier New', monospace; }
+
+        .cmd-box { font-size: 10px; color: #fff; opacity: 0.6; height: 20px; overflow: hidden; white-space: nowrap; margin-top: 5px; font-family: monospace; }
+
+        .file-selector-box { border-bottom: 1px solid #00ff41; padding-bottom: 15px; }
+        #gcode-select { width: 100%; background: #050505; color: #00ff41; border: 1px solid #00ff41; padding: 8px; font-family: 'Consolas', monospace; font-size: 12px; cursor: pointer; outline: none; margin-bottom: 10px; }
+
+        .upload-btn {
+            display: block; width: 100%; background: rgba(0, 255, 65, 0.1); border: 1px dashed rgba(0, 255, 65, 0.6);
+            color: #00ff41; padding: 10px; text-align: center; cursor: pointer; font-size: 11px; font-weight: bold; box-sizing: border-box;
+        }
+        .upload-btn:hover { background: rgba(0, 255, 65, 0.2); }
+        
+        #local-file-input { display: none !important; }
+
+        .download-zone {
+            position: absolute; bottom: 40px; right: 40px; pointer-events: auto; text-align: right;
+            display: flex; flex-direction: column; gap: 10px;
+        }
+        .btn-group { display: flex; gap: 8px; justify-content: flex-end; }
+        .btn-download {
+            display: inline-block; text-decoration: none; color: #00ff41; border: 1px solid #00ff41;
+            background: #000; padding: 10px 20px; font-weight: 900; font-size: 12px; text-transform: uppercase;
+            letter-spacing: 1px; transition: all 0.2s; cursor: pointer; box-shadow: 4px 4px 0px rgba(0, 255, 65, 0.3);
+        }
+        .btn-download:hover { transform: translate(-1px, -1px); box-shadow: 6px 6px 0px rgba(0, 255, 65, 0.5); }
+        .btn-download.recording { color: #000 !important; background: #00ff41 !important; animation: blink 1s infinite; }
+
+        .progress-line { position: absolute; bottom: 0; left: 0; height: 3px; background: #00ff41; width: 0%; box-shadow: 0 0 15px #00ff41; z-index: 20; transition: width 0.1s linear; }
+
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.9);
+            z-index: 999; display: none; justify-content: center; align-items: center; backdrop-filter: blur(10px);
+        }
+        .modal-box {
+            background: #000; border: 2px solid #ff3333; color: #ff3333; padding: 40px; text-align: center;
+            box-shadow: 0 0 50px rgba(255, 51, 51, 0.3); max-width: 400px;
+        }
+        .input-hint {
+            font-size: 9px;
+            color: #00ff41;
+            opacity: 0.5;           
+            text-align: center;
+            margin-top: -8px;       
+            margin-bottom: 8px;
+            letter-spacing: 1px;
+            font-family: 'Consolas', monospace;
+            pointer-events: none;  
+        }
+        @media (max-width: 768px) {
+            .hud-container {
+                padding: 0; 
+                display: flex;
+                flex-direction: column;
+                justify-content: flex-end;
+            }
+                #btn-zip, #btn-video {
+                    display: none !important;
+                }
+            .stats-panel {
+                position: relative; 
+                left: 0 !important;
+                right: 0 !important;
+                margin: 0 !important; 
+                width: 100% !important; 
+                
+                box-sizing: border-box; 
+                border-left: none !important; 
+                border-top: 2px solid #00ff41; 
+                
+                padding: 20px;
+                background: rgba(0, 10, 0, 0.92);
+                backdrop-filter: blur(15px);
+                gap: 10px;
+            }
+
+            .input-hint {
+                display: none !important;
+            }
+            
+            .download-zone {
+                position: relative;
+                bottom: 0;
+                right: 0;
+                width: 100%;
+                padding: 10px 20px;
+                box-sizing: border-box;
+                text-align: center;
+                background: rgba(0, 5, 0, 0.92);
+            }
+        }
+
+        #loader { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #00ff41; background: #000; border: 1px solid #00ff41; padding: 30px; z-index: 100; font-size: 14px; letter-spacing: 4px; }
+        @keyframes blink { 50% { opacity: 0.5; } }
+    </style>
+</head>
+<body>
+
+    <div id="loader">INITIALIZING SYSTEM...</div>
+
+    <div id="error-modal" class="modal-overlay">
+        <div class="modal-box">
+            <div style="font-weight:900; margin-bottom:10px;">/// SYSTEM ERROR ///</div>
+            <div style="font-size: 12px; line-height: 1.5; opacity: 0.8;">
+                INVALID FILE FORMAT DETECTED.<br>
+                ACCESS DENIED.<br><br>
+                ONLY <span style="color:#fff; font-weight:bold;">.GCODE</span> OR <span style="color:#fff; font-weight:bold;">.GCODE.3MF</span> ALLOWED.
+            </div>
+            <button style="background: #ff3333; color: #000; border: none; padding: 10px 30px; font-weight: bold; cursor: pointer; margin-top: 20px;" onclick="closeError()">ACKNOWLEDGE</button>
+        </div>
+    </div>
+
+    <div class="hud-container">
+        <a href="https://makerworld.com/zh/@bigchx" target="_blank" class="brand-link">/// NETWORK: @BIGCHX</a>
+
+        <div class="download-zone">
+            <div class="btn-group">
+                <button id="btn-zip" class="btn-download" onclick="takeScreenshot()">SHOT</button>
+                <button id="btn-video" class="btn-download" onclick="startFullExport('video')">REC</button>
+                <a href="#" id="dl-btn" download class="btn-download">SOURCE</a>
+            </div>
+            <div id="file-name-disp" style="font-size:9px; color:#00ff41; opacity:0.6;">NO FILE</div>
+        </div>
+
+        <div class="stats-panel">
+            <div class="controls-row">
+                <button id="toggle-rotate" class="btn-toggle" onclick="toggleMode('rotate')">DRAG</button>
+                <button id="toggle-imprint" class="btn-toggle" onclick="toggleMode('imprint')">IMPRINT</button>
+                <button id="toggle-travel" class="btn-toggle" onclick="toggleMode('travel')">TRAVEL</button>
+                <button class="btn-toggle" onclick="resetView()">CENTER</button>
+            </div>
+            <div class="input-hint">
+              [ MIDDLE MOUSE : ROTATE VIEW ]
+            </div>
+            <div class="live-counter-wrapper">
+                <div class="counter-val" id="global-cnt">00,000,000</div>
+            </div>
+
+            <div class="file-selector-box">
+                <select id="gcode-select" onchange="loadServerFile(this.value)"></select>
+                <label for="local-file-input" class="upload-btn">[ + LOAD GCODE ]</label>
+                <input type="file" id="local-file-input" accept=".gcode,.gcode.3mf">
+            </div>
+
+            <div class="stat-row"><span class="stat-label">NOZZLE</span><span class="stat-value"><span id="temp-val">0</span>°C</span></div>
+            <div class="stat-row"><span class="stat-label">Z-AXIS</span><span class="stat-value"><span id="z-val">0.00</span> mm</span></div>
+            <div class="stat-row"><span class="stat-label">SPEED</span><span class="stat-value"><span id="speed-val">1</span>x</span></div>
+
+            <div class="cmd-box">> <span id="cmd-disp">SYSTEM READY</span></div>
+        </div>
+    </div>
+
+    <div class="progress-line" id="p-bar"></div>
+    <canvas id="canvas"></canvas>
+
+<script>
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const imprintCanvas = document.createElement('canvas');
+    const imprintCtx = imprintCanvas.getContext('2d');
+
+    const loader = document.getElementById('loader');
+    const fileInput = document.getElementById('local-file-input');
+    const selectBox = document.getElementById('gcode-select');
+    const dlBtn = document.getElementById('dl-btn');
+    const errorModal = document.getElementById('error-modal');
+    const globalCounterEl = document.getElementById('global-cnt');
+    
+    const AVAILABLE_FILES = [
+        './BambuLab.gcode',
+        './3DBenchy.gcode',
+        './Scorpion.gcode'
+    ];
+    let gcodeMoves = [], minX = 999, maxX = -999, minY = 999, maxY = -999;
+    let currentIndex = 0, speed = 1, acceleration = 1.015, maxSpeed = 1200;
+    let scale = 10, offsetX = 0, offsetY = 0, animationId = null;
+
+    let isDragging = false, lastMouseX = 0, lastMouseY = 0;
+    let userScaleFactor = 1.0, lastTouchDist = 0;
+    let isRotateMode = false, useImprint = false, showTravel = true;
+    let rotationAngle = 0, pitchAngle = 0; 
+    let isFirstLoad = true;
+
+    let isExportingZip = false, isExportingVideo = false;
+    let zipPacker, videoRecorder, videoChunks = [], exportFrameCount = 0;
+    
+    let postFinishFrames = 0; 
+    const EXTRA_RECORD_FRAMES = 120; 
+
+    const EPOCH_START = 1767225600000; 
+    let localIncrements = 0;
+
+    function initCounter() {
+        const stored = localStorage.getItem('3dp_local_adds');
+        if (stored) localIncrements = parseInt(stored);
+        updateCounterDisplay();
+        organicGrowthLoop();
+    }
+
+    function organicGrowthLoop() {
+        updateCounterDisplay();
+        setTimeout(organicGrowthLoop, Math.floor(Math.random() * 2000) + 1000);
+    }
+
+    function incrementCounter(amount) {
+        localIncrements += amount;
+        localStorage.setItem('3dp_local_adds', localIncrements);
+        updateCounterDisplay();
+    }
+
+    function updateCounterDisplay() {
+        const now = Date.now();
+        const total = Math.max(0, Math.floor((now - EPOCH_START) / 3000)) + localIncrements + 5000; 
+        globalCounterEl.innerText = total.toLocaleString('en-US', {minimumIntegerDigits: 8});
+    }
+
+    function startFullExport(type) {
+        if (gcodeMoves.length === 0) return;
+        currentIndex = 0; speed = 1;
+        postFinishFrames = 0; 
+        imprintCtx.clearRect(0,0, imprintCanvas.width, imprintCanvas.height);
+        const fileName = document.getElementById('file-name-disp').innerText.replace(/SOURCE:|READY|\||\.gcode/g, '').trim();
+
+        if (type === 'zip') {
+            zipPacker = new JSZip(); exportFrameCount = 0; isExportingZip = true;
+            document.getElementById('btn-zip').innerText = "REC...";
+            document.getElementById('btn-zip').classList.add('recording');
+        } else if (type === 'video') {
+            videoChunks = [];
+            const stream = canvas.captureStream(60);
+            videoRecorder = new MediaRecorder(stream, { mimeType: 'video/webm; codecs=vp9', bitsPerSecond: 8000000 });
+            videoRecorder.ondataavailable = e => videoChunks.push(e.data);
+            videoRecorder.onstop = () => {
+                const blob = new Blob(videoChunks, { type: 'video/webm' });
+                const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+                a.download = fileName + "_1080P.webm"; a.click();
+            };
+            videoRecorder.start();
+            isExportingVideo = true;
+            document.getElementById('btn-video').innerText = "REC...";
+            document.getElementById('btn-video').classList.add('recording');
+        }
+    }
+
+    function toggleMode(type) {
+        if (type === 'rotate') {
+            isRotateMode = !isRotateMode;
+            document.getElementById('toggle-rotate').innerText = isRotateMode ? 'ROTATE' : 'DRAG';
+            document.getElementById('toggle-rotate').classList.toggle('active', isRotateMode);
+        } else if (type === 'imprint') {
+            useImprint = !useImprint;
+            document.getElementById('toggle-imprint').innerText = useImprint ? 'IMPRINT: ON' : 'IMPRINT: OFF';
+            document.getElementById('toggle-imprint').classList.toggle('active', useImprint);
+            if (!useImprint) imprintCtx.clearRect(0, 0, imprintCanvas.width, imprintCanvas.height);
+        } else if (type === 'travel') {
+            showTravel = !showTravel;
+            document.getElementById('toggle-travel').innerText = showTravel ? 'TRAVEL: ON' : 'TRAVEL: OFF';
+            document.getElementById('toggle-travel').classList.toggle('active', showTravel);
+            if (useImprint) imprintCtx.clearRect(0, 0, imprintCanvas.width, imprintCanvas.height);
+        }
+    }
+
+    function resetView() {
+        const mw = maxX - minX, mh = maxY - minY;
+        const isMobile = window.innerWidth < 768;
+        
+        scale = (Math.min(canvas.width, canvas.height) * (isMobile ? 0.45 : 0.6)) / Math.max(mw, mh);
+        userScaleFactor = 1.0; rotationAngle = 0; pitchAngle = 0; 
+        
+        offsetX = canvas.width / 2;
+        if (isMobile) {
+            offsetY = canvas.height * 0.28; 
+        } else {
+            offsetY = canvas.height / 2;
+        }
+        imprintCtx.clearRect(0, 0, imprintCanvas.width, imprintCanvas.height);
+    }
+
+    function initInteractions() {
+        let isMiddleDragging = false; // Added state for Middle Mouse Button
+
+        const start = (x, y, dist) => { isDragging = true; lastMouseX = x; lastMouseY = y; lastTouchDist = dist; };
+        const move = (x, y, dist) => {
+            if (!isDragging) return;
+
+            if (dist > 0 && lastTouchDist > 0) {
+                const zoomRatio = dist / lastTouchDist;
+                userScaleFactor *= zoomRatio;
+                userScaleFactor = Math.max(0.1, Math.min(userScaleFactor, 10));
+            } 
+            else {
+                const dx = x - lastMouseX, dy = y - lastMouseY;
+                
+                // Allow rotation if Toggle is active OR Middle Mouse is held
+                if (isRotateMode || isMiddleDragging) { 
+                    rotationAngle += dx * 0.01; 
+                    pitchAngle += dy * 0.01; 
+                } else { 
+                    offsetX += dx; 
+                    offsetY += dy; 
+                }
+            }
+
+            lastMouseX = x;
+            lastMouseY = y;
+            lastTouchDist = dist; 
+        };
+        
+        // Updated Mousedown to check for Middle Button (Button 1)
+        canvas.addEventListener('mousedown', e => {
+            if (e.button === 1) { // Middle Mouse Button
+                e.preventDefault(); // Prevent scroll/paste default behavior
+                isMiddleDragging = true;
+            }
+            start(e.clientX, e.clientY, 0);
+        });
+
+        window.addEventListener('mousemove', e => move(e.clientX, e.clientY, 0));
+        
+        // Reset both dragging states on mouseup
+        window.addEventListener('mouseup', () => { 
+            isDragging = false; 
+            isMiddleDragging = false; 
+        });
+
+        canvas.addEventListener('wheel', e => {
+            e.preventDefault();
+            userScaleFactor *= (1 - e.deltaY * 0.001);
+            userScaleFactor = Math.max(0.1, Math.min(userScaleFactor, 10));
+        }, { passive: false });
+        canvas.addEventListener('touchstart', e => {
+            if (e.touches.length === 1) start(e.touches[0].clientX, e.touches[0].clientY, 0);
+            else if (e.touches.length === 2) start(0, 0, Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY));
+        });
+        canvas.addEventListener('touchmove', e => {
+            e.preventDefault();
+            if (e.touches.length === 1) move(e.touches[0].clientX, e.touches[0].clientY, 0);
+            else if (e.touches.length === 2) move(0, 0, Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY));
+        }, { passive: false });
+        canvas.addEventListener('touchend', () => isDragging = false);
+    }
+
+    window.onload = function() {
+        if (typeof WeixinJSBridge == "undefined") document.addEventListener('WeixinJSBridgeReady', safeStart, false);
+        safeStart();
+    };
+
+    function safeStart() {
+        resize(); initFileSelector(); initCounter(); initInteractions();
+        if (AVAILABLE_FILES.length > 0) {
+            setTimeout(() => { if(loader.style.display !== 'none' && gcodeMoves.length === 0) loader.style.display = 'none'; }, 25000);
+            loadServerFile(AVAILABLE_FILES[0]);
+        } else { loader.style.display = 'none'; }
+    }
+
+    function initFileSelector() {
+        selectBox.innerHTML = '';
+        AVAILABLE_FILES.forEach(file => {
+            const option = document.createElement('option');
+            option.value = file;
+            option.text = file.split('/').pop().replace(/\.gcode(\.3mf)?/i, ''); 
+            selectBox.appendChild(option);
+        });
+    }
+
+    function closeError() { errorModal.style.display = 'none'; }
+
+    function loadServerFile(url) {
+        loader.style.display = 'block';
+        let localOption = document.getElementById('opt-local');
+        if (localOption) localOption.remove();
+        const xhr = new XMLHttpRequest();
+        xhr.open('GET', url + "?v=" + Date.now(), true);
+        xhr.onreadystatechange = function() {
+            if (xhr.readyState === 4 && xhr.status === 200) {
+                updateFileInfo(url.split('/').pop(), url, false);
+                startSimulation(xhr.responseText);
+            }
+        };
+        xhr.send();
+    }
+
+    fileInput.addEventListener('change', function(e) {
+        const file = e.target.files[0]; if (!file) return;
+        const ext = file.name.toLowerCase();
+        if (!(ext.endsWith('.gcode') || ext.endsWith('.gcode.3mf'))) {
+            errorModal.style.display = 'flex';
+            return;
+        }
+        if (ext.endsWith('.gcode.3mf')) {
+            loader.style.display = 'block';
+            JSZip.loadAsync(file).then(zip => zip.file("Metadata/plate_1.gcode").async("string")).then(c => processLocalResult(file.name, c));
+        } else {
+            const r = new FileReader(); r.onload = (e) => processLocalResult(file.name, e.target.result); r.readAsText(file);
+        }
+    });
+
+    function processLocalResult(fileName, content) {
+        updateFileInfo(fileName, "", true);
+        let opt = document.getElementById('opt-local') || document.createElement('option');
+        opt.id = 'opt-local'; opt.value = 'local';
+        opt.text = '[LOCAL] ' + fileName.replace(/\.gcode(\.3mf)?/i, '');
+        if(!document.getElementById('opt-local')) selectBox.appendChild(opt);
+        selectBox.value = 'local';
+        startSimulation(content);
+    }
+    function takeScreenshot() {
+        const fileName = document.getElementById('file-name-disp').innerText || "3DP_Capture";
+        const timestamp = new Date().getTime();
+        
+        const imageData = canvas.toDataURL("image/png");
+        
+        const link = document.createElement('a');
+        link.href = imageData;
+        link.download = `${fileName}_${timestamp}.png`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        
+        const btn = document.getElementById('btn-zip');
+        const originalText = btn.innerText;
+        btn.innerText = "SAVED!";
+        setTimeout(() => { btn.innerText = originalText; }, 1000);
+    }
+    function startSimulation(text) {
+        parseGcode(text);
+        loader.style.display = 'none';
+        currentIndex = 0; speed = 1; incrementCounter(1);
+        ctx.fillStyle = '#050505'; ctx.fillRect(0,0, canvas.width, canvas.height);
+        if (isFirstLoad) resetView();
+        isFirstLoad = false;
+        if (animationId) cancelAnimationFrame(animationId);
+        animate();
+    }
+
+    function updateFileInfo(name, url, isLocal) {
+        dlBtn.style.display = isLocal ? 'none' : 'inline-block';
+        dlBtn.href = url; dlBtn.download = name;
+        const cleanName = name.replace(/\.gcode(\.3mf)?/i, '');
+        document.getElementById('file-name-disp').innerText = cleanName;
+    }
+
+    function parseGcode(text) {
+        gcodeMoves = []; minX = 999, maxX = -999, minY = 999, maxY = -999;
+        text.split('\n').forEach(line => {
+            if (line.startsWith('G0') || line.startsWith('G1')) {
+                const x = line.match(/X([\d\.]+)/), y = line.match(/Y([\d\.]+)/), z = line.match(/Z([\d\.]+)/);
+                if (x && y) {
+                    const nx = parseFloat(x[1]), ny = parseFloat(y[1]);
+                    const isTravel = !line.includes('E');
+                    minX = Math.min(minX, nx); maxX = Math.max(maxX, nx);
+                    minY = Math.min(minY, ny); maxY = Math.max(maxY, ny);
+                    gcodeMoves.push({ x: nx, y: ny, z: z ? parseFloat(z[1]) : (gcodeMoves.length ? gcodeMoves[gcodeMoves.length-1].z : 0), isTravel: isTravel, raw: line });
+                }
+            }
+        });
+    }
+
+    function resize() { 
+        canvas.width = imprintCanvas.width = window.innerWidth; 
+        canvas.height = imprintCanvas.height = window.innerHeight; 
+        resetView(); 
+    }
+    window.addEventListener('resize', resize);
+
+    function project(x, y, z) {
+        let cx = x - (minX + maxX) / 2, cy = y - (minY + maxY) / 2, cz = z;
+        let rx = cx * Math.cos(rotationAngle) - cy * Math.sin(rotationAngle);
+        let ry = cx * Math.sin(rotationAngle) + cy * Math.cos(rotationAngle);
+        let finalY = ry * Math.cos(pitchAngle) - cz * Math.sin(pitchAngle);
+        let s = scale * userScaleFactor;
+        return { x: rx * s + offsetX, y: -finalY * s + offsetY };
+    }
+
+    function animate() {
+        ctx.fillStyle = 'rgba(5, 5, 5, 0.15)'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+        if (useImprint) { ctx.globalAlpha = 0.12; ctx.drawImage(imprintCanvas, 0, 0); ctx.globalAlpha = 1.0; }
+
+        if (currentIndex >= gcodeMoves.length) {
+            if (isExportingVideo && postFinishFrames < EXTRA_RECORD_FRAMES) {
+                postFinishFrames++;
+                document.getElementById('btn-video').innerText = "WAIT...";
+            } else {
+                if (isExportingZip) {
+                    isExportingZip = false;
+                    zipPacker.generateAsync({type:"blob"}).then(b => {
+                        const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = "frames.zip"; a.click();
+                        document.getElementById('btn-zip').innerText = "SHOT";
+                        document.getElementById('btn-zip').classList.remove('recording');
+                    });
+                }
+                if (isExportingVideo) {
+                    isExportingVideo = false; videoRecorder.stop();
+                    document.getElementById('btn-video').innerText = "REC";
+                    document.getElementById('btn-video').classList.remove('recording');
+                }
+                currentIndex = 0; speed = 1; postFinishFrames = 0; incrementCounter(1);
+                ctx.fillStyle = '#050505'; ctx.fillRect(0,0, canvas.width, canvas.height);
+            }
+        } else {
+            ctx.beginPath(); ctx.strokeStyle = '#00ff41'; ctx.lineWidth = 2;
+            imprintCtx.strokeStyle = 'rgba(0, 255, 65, 0.15)';
+            let drawLimit = Math.floor(speed);
+            
+            for (let i = 0; i < drawLimit; i++) {
+                if (currentIndex >= gcodeMoves.length) break;
+                let m = gcodeMoves[currentIndex], prev = gcodeMoves[currentIndex-1];
+                let pos = project(m.x, m.y, m.z);
+                const shouldSkip = !showTravel && m.isTravel;
+                if (prev) {
+                    let ppos = project(prev.x, prev.y, prev.z);
+                    if (shouldSkip) { ctx.moveTo(pos.x, pos.y); } 
+                    else {
+                        if (i === 0) ctx.moveTo(ppos.x, ppos.y);
+                        ctx.lineTo(pos.x, pos.y);
+                        if (useImprint) { imprintCtx.beginPath(); imprintCtx.moveTo(ppos.x, ppos.y); imprintCtx.lineTo(pos.x, pos.y); imprintCtx.stroke(); }
+                    }
+                }
+                if (i === drawLimit - 1) {
+                    document.getElementById('z-val').innerText = m.z.toFixed(2);
+                    document.getElementById('temp-val').innerText = (215 + (Math.random()-0.5)*2).toFixed(0);
+                    document.getElementById('cmd-disp').innerText = m.raw;
+                }
+                currentIndex++;
+            }
+            ctx.stroke();
+        }
+
+        if (gcodeMoves[currentIndex]) {
+            let p = project(gcodeMoves[currentIndex].x, gcodeMoves[currentIndex].y, gcodeMoves[currentIndex].z);
+            ctx.fillStyle = '#fff'; ctx.shadowBlur = 15; ctx.shadowColor = '#00ff41';
+            ctx.beginPath(); ctx.arc(p.x, p.y, 3, 0, Math.PI*2); ctx.fill();
+            ctx.shadowBlur = 0;
+        }
+
+        if (isExportingZip && currentIndex > 0 && currentIndex < gcodeMoves.length) {
+            const frame = canvas.toDataURL("image/png");
+            zipPacker.file("frame_" + String(exportFrameCount).padStart(6, '0') + ".png", frame.split(',')[1], {base64: true});
+            exportFrameCount++;
+        }
+
+        document.getElementById('p-bar').style.width = (currentIndex / gcodeMoves.length * 100) + "%";
+        if (speed < maxSpeed && currentIndex < gcodeMoves.length) speed *= acceleration;
+        document.getElementById('speed-val').innerText = Math.floor(speed);
+        animationId = requestAnimationFrame(animate);
+    }
+</script>
+</body>
+</html>
